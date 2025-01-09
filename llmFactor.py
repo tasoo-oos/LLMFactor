@@ -112,7 +112,7 @@ class LLMFactorAnalyzer:
             
             # Analyze price movement
             answer_extraction = self.client.chat.completions.create(
-                model="meta-llama/Llama-3.2-3B-Instruct",
+                model=self.model,
                 temperature=0,
                 messages=[
                     {"role": "system",
@@ -127,13 +127,17 @@ class LLMFactorAnalyzer:
             answer = answer_extraction.choices[0].message.content
             result['analysis'] = answer
 
-            pred_rise = "rise" in answer.split('\n')[0]
-            pred_fall = "fall" in answer.split('\n')[0]
+            # Parse prediction
+            filled_blanks = answer.split('\n')[0]
+            positive_sentiments = ["rise", "rose"]
+            negative_sentiments = ["fall", "fell"]
+
+            pred_rise = any(sentiment in filled_blanks for sentiment in positive_sentiments)
+            pred_fall = any(sentiment in filled_blanks for sentiment in negative_sentiments)
             actual_rise = price_movements[-1]['rise']
 
-
             if pred_rise == pred_fall:
-                result['analysis'] = "Uncertain"
+                raise ValueError("Prediction is uncertain.")
 
             result['prediction'] = "rise" if pred_rise else "fall"
             result['actual'] = "rise" if actual_rise else "fall"
@@ -165,124 +169,137 @@ def parse_args():
     return parser.parse_args()
 
 def main():
-    # Parse command line arguments
-    args = parse_args()
-    
-    # Initialize analyzer
-    analyzer = LLMFactorAnalyzer(args.endpoint, args.token, args.model)
-    
-    # Get tickers to analyze
-    available_tickers = analyzer.get_available_tickers()
-    if not available_tickers:
-        print("No tickers available in both price and news data.")
-        return
-        
-    tickers_to_analyze = args.tickers if args.tickers else available_tickers
-    
-    # Create output directory
-    output_dir = Path(args.output)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Process each ticker
-    stat = {
-        "total": 0,
-        "success": 0,
-        "uncertain": 0,
-        "error": 0,
-        "confusion_rate": {
-            "true_rise": 0,
-            "true_fall": 0,
-            "false_rise": 0,
-            "false_fall": 0,
+    try:
+        # Parse command line arguments
+        args = parse_args()
+
+        # Initialize analyzer
+        analyzer = LLMFactorAnalyzer(args.endpoint, args.token, args.model)
+
+        # Get tickers to analyze
+        available_tickers = analyzer.get_available_tickers()
+        if not available_tickers:
+            print("No tickers available in both price and news data.")
+            return
+
+        tickers_to_analyze = args.tickers if args.tickers else available_tickers
+        if not set(tickers_to_analyze).issubset(available_tickers):
+            print("Invalid tickers specified.")
+            print(f"Please remove the following invalid tickers: {set(tickers_to_analyze) - set(available_tickers)}")
+            return
+
+        # Create output directory
+        output_dir = Path(args.output)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Process each ticker
+        stat = {
+            "total": 0,
+            "success": 0,
+            "uncertain": 0,
+            "error": 0,
+            "confusion_rate": {
+                "true_rise": 0,
+                "true_fall": 0,
+                "false_rise": 0,
+                "false_fall": 0,
+            }
         }
-    }
-    all_results = []
-    for ticker in tqdm(tickers_to_analyze, desc="Processing tickers"):
-        # Get available dates for this ticker
-        dates = analyzer.get_available_dates(ticker, price_k=5)
-        if not dates:
-            print(f"No dates available for ticker {ticker}")
-            continue
-            
-        # Filter dates if specified
-        if args.start_date:
-            start_date = pd.to_datetime(args.start_date)
-            dates = [d for d in dates if d >= start_date]
-        if args.end_date:
-            end_date = pd.to_datetime(args.end_date)
-            dates = [d for d in dates if d <= end_date]
-            
-        # Analyze each date
-        for target_date in tqdm(dates, desc=f"Analyzing {ticker}", leave=False):
-            result = analyzer.analyze_factors(ticker, target_date)
-            all_results.append(result)
+        all_results = []
+        for ticker in tqdm(tickers_to_analyze, desc="Processing tickers"):
+            # Get available dates for this ticker
+            dates = analyzer.get_available_dates(ticker, price_k=5)
+            if not dates:
+                print(f"No dates available for ticker {ticker}")
+                continue
 
-            # Update stats
-            stat['total'] += 1
-            if result['status'] == 'success':
-                stat['success'] += 1
-                if result['prediction'] == result['actual']:
-                    if result['prediction'] == 'rise':
-                        stat['confusion_rate']['true_rise'] += 1
+            # Filter dates if specified
+            if args.start_date:
+                start_date = pd.to_datetime(args.start_date)
+                dates = [d for d in dates if d >= start_date]
+            if args.end_date:
+                end_date = pd.to_datetime(args.end_date)
+                dates = [d for d in dates if d <= end_date]
+
+            # Analyze each date
+            for target_date in tqdm(dates, desc=f"Analyzing {ticker}", leave=False):
+                result = analyzer.analyze_factors(ticker, target_date)
+                all_results.append(result)
+
+                # Update stats
+                stat['total'] += 1
+                if result['status'] == 'success':
+                    stat['success'] += 1
+                    if result['prediction'] == result['actual']:
+                        if result['prediction'] == 'rise':
+                            stat['confusion_rate']['true_rise'] += 1
+                        else:
+                            stat['confusion_rate']['true_fall'] += 1
                     else:
-                        stat['confusion_rate']['true_fall'] += 1
-                else:
-                    if result['prediction'] == 'rise':
-                        stat['confusion_rate']['false_rise'] += 1
-                    else:
-                        stat['confusion_rate']['false_fall'] += 1
-            elif result['status'] == 'error':
-                stat['error'] += 1
-            elif result['status'] == 'uncertain':
-                stat['uncertain'] += 1
-    
-    # Save combined results
-    combined_output = output_dir / "all_results.json"
-    with open(combined_output, 'w') as f:
-        json.dump(all_results, f, indent=2)
+                        if result['prediction'] == 'rise':
+                            stat['confusion_rate']['false_rise'] += 1
+                        else:
+                            stat['confusion_rate']['false_fall'] += 1
+                elif result['status'] == 'error':
+                    stat['error'] += 1
+                elif result['status'] == 'uncertain':
+                    stat['uncertain'] += 1
 
-    stat_output = output_dir / "summary.json"
-    with open(stat_output, 'w') as f:
-        json.dump(stat, f, indent=2)
-    
-    print(f"\nAnalysis complete. Results saved to {output_dir}")
-    
-    # Print summary
-    successful = sum(1 for r in all_results if r['status'] == 'success')
-    failed = sum(1 for r in all_results if r['status'] == 'error')
+                # Save combined results
+                combined_output = output_dir / "all_results.json"
+                with open(combined_output, 'w') as f:
+                    json.dump(all_results, f, indent=2)
 
-    # Print summary
-    print(f"\nSummary:")
-    print(f"Total analyses: {len(all_results)}")
-    print(f"Successful: {successful}")
-    print(f"Failed: {failed}")
-    print(f"Uncertain: {stat['uncertain']}")
+                stat_output = output_dir / "summary.json"
+                with open(stat_output, 'w') as f:
+                    json.dump(stat, f, indent=2)
 
-    # Confusion rate
-    print(f"Confusion rate:")
-    print(f"  True rise: {stat['confusion_rate']['true_rise'] / successful:.2f}")
-    print(f"  True fall: {stat['confusion_rate']['true_fall'] / successful:.2f}")
-    print(f"  False rise: {stat['confusion_rate']['false_rise'] / successful:.2f}")
-    print(f"  False fall: {stat['confusion_rate']['false_fall'] / successful:.2f}")
+        print(f"\nAnalysis complete. Results saved to {output_dir}")
 
-    # Benchmark (ACC, F-1, MCC)
-    tr = stat['confusion_rate']['true_rise']
-    tf = stat['confusion_rate']['true_fall']
-    fr = stat['confusion_rate']['false_rise']
-    ff = stat['confusion_rate']['false_fall']
+        # Print summary
+        successful = sum(1 for r in all_results if r['status'] == 'success')
+        failed = sum(1 for r in all_results if r['status'] == 'error')
 
-    acc = (tr + tf) / successful
+        # Print summary
+        print(f"\nSummary:")
+        print(f"Total analyses: {len(all_results)}")
+        print(f"Successful: {successful}")
+        print(f"Failed: {failed}")
+        print(f"Uncertain: {stat['uncertain']}")
 
-    f1_denominator = 2 * tr + fr + ff
-    f1 = 2 * tr / f1_denominator if f1_denominator != 0 else float('nan')
+        # Confusion rate
+        print(f"Confusion rate:")
+        print(f"  True rise: {stat['confusion_rate']['true_rise'] / successful:.2f}")
+        print(f"  True fall: {stat['confusion_rate']['true_fall'] / successful:.2f}")
+        print(f"  False rise: {stat['confusion_rate']['false_rise'] / successful:.2f}")
+        print(f"  False fall: {stat['confusion_rate']['false_fall'] / successful:.2f}")
 
-    mcc_denominator = ((tr + fr) * (tr + ff) * (tf + fr) * (tf + ff)) ** 0.5
-    mcc = (tr * tf - fr * ff) / mcc_denominator if mcc_denominator != 0 else float('nan')
+        # Benchmark (ACC, F-1, MCC)
+        tr = stat['confusion_rate']['true_rise']
+        tf = stat['confusion_rate']['true_fall']
+        fr = stat['confusion_rate']['false_rise']
+        ff = stat['confusion_rate']['false_fall']
 
-    print(f"\nBenchmark:")
-    print(f"  Accuracy: {acc:.4f}")
-    print(f"  F1 Score: {f1:.4f}")
-    print(f"  Matthews Correlation Coefficient: {mcc:.4f}")
+        acc = (tr + tf) / successful
+
+        f1_denominator = 2 * tr + fr + ff
+        f1 = 2 * tr / f1_denominator if f1_denominator != 0 else float('nan')
+
+        mcc_denominator = ((tr + fr) * (tr + ff) * (tf + fr) * (tf + ff)) ** 0.5
+        mcc = (tr * tf - fr * ff) / mcc_denominator if mcc_denominator != 0 else float('nan')
+
+        print(f"\nBenchmark:")
+        print(f"  Accuracy: {acc:.4f}")
+        print(f"  F1 Score: {f1:.4f}")
+        print(f"  Matthews Correlation Coefficient: {mcc:.4f}")
+
+    except KeyboardInterrupt:
+        print("\nAnalysis interrupted.")
+        return
+
+    except Exception as e:
+        print(f"Unexpected Error: {e}")
+        raise e
 
 if __name__ == "__main__":
     main()
