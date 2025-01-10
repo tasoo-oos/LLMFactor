@@ -76,7 +76,7 @@ class PriceDataLoader:
         dates = sorted(df['Date'].unique())[window_size:]
         return dates
     
-    def get_price_window(self, ticker: str, target_date: str, window_size: int = 5) -> pd.DataFrame:
+    def get_price_window(self, ticker: str, target_date: datetime, window_size: int = 5) -> pd.DataFrame:
         """
         Get price data for a window of days up to and including the target date.
         
@@ -100,7 +100,7 @@ class PriceDataLoader:
         window_data = df[df['Date'] <= target_date].tail(window_size + 1)
         return window_data
     
-    def get_price_movements(self, ticker: str, target_date: str, window_size: int = 5) -> List[Dict]:
+    def get_price_movements(self, ticker: str, target_date: datetime, window_size: int = 5) -> List[Dict]:
         """
         Get daily price movements (rise/fall) for a window of days up to target date.
         
@@ -145,7 +145,7 @@ if __name__ == "__main__":
     print("Available tickers:", loader.get_available_tickers())
     
     # Example: Get price movements for AAPL
-    movements = loader.get_price_movements("AAPL", "2018-11-12")
+    movements = loader.get_price_movements("AAPL", datetime.strptime("2019-01-14", "%Y-%m-%d"), window_size=5)
     print("\nPrice movements for AAPL:")
     for movement in movements:
         direction = "up" if movement['rise'] else "down"

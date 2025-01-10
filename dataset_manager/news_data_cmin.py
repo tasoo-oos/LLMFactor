@@ -76,7 +76,7 @@ class NewsDataLoader:
         self._cached_data[ticker] = df
         return df
     
-    def get_news_by_date(self, ticker: str, target_date: str) -> str:
+    def get_news_by_date(self, ticker: str, target_date: datetime) -> str:
         """
         Get formatted news for a specific ticker and date.
         
@@ -125,5 +125,5 @@ if __name__ == "__main__":
     print("Available tickers:", loader.get_available_tickers())
     
     # Example: Get news for AAPL on a specific date
-    aapl_news = loader.get_news_by_date("AAPL", "2018-11-12")
+    aapl_news = loader.get_news_by_date("AAPL", datetime.strptime("2018-04-25", "%Y-%m-%d"))
     print(aapl_news)

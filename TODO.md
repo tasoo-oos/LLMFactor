@@ -1,1 +1,1 @@
-- [ ] Add relations to the LLMFactor framework.
+- [ ] Add relations detection to the LLMFactor framework.
