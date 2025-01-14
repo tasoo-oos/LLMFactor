@@ -2,7 +2,6 @@ import pandas as pd
 import glob
 from typing import List, Dict, Optional
 from datetime import datetime
-import numpy as np
 
 class PriceDataLoader:
     """
@@ -76,7 +75,7 @@ class PriceDataLoader:
         dates = sorted(df['Date'].unique())[window_size:]
         return dates
     
-    def get_price_window(self, ticker: str, target_date: datetime, window_size: int = 5) -> pd.DataFrame:
+    def get_price_window(self, ticker: str, target_date: datetime | str, window_size: int = 5, predict_next_day: bool = False) -> pd.DataFrame:
         """
         Get price data for a window of days up to and including the target date.
         
@@ -84,23 +83,26 @@ class PriceDataLoader:
             ticker (str): Stock ticker symbol
             target_date (str): Target date in format 'YYYY-MM-DD'
             window_size (int): Number of previous days to include
+            predict_next_day (bool): If True, predict the price for the next day of the target date (default: False)
             
         Returns:
             pd.DataFrame: DataFrame containing price data for the window period
         """
-        df = self.load_price_data(ticker)
-        if df is None:
-            return pd.DataFrame()
-            
         # Convert target_date to datetime if it's a string
         if isinstance(target_date, str):
             target_date = pd.to_datetime(target_date)
-            
+        if predict_next_day:
+            target_date += pd.Timedelta(days=1)  # Prediction for next day
+
+        df = self.load_price_data(ticker)
+        if df is None:
+            return pd.DataFrame()
+
         # Get window of data
         window_data = df[df['Date'] <= target_date].tail(window_size + 1)
         return window_data
     
-    def get_price_movements(self, ticker: str, target_date: datetime, window_size: int = 5) -> List[Dict]:
+    def get_price_movements(self, ticker: str, target_date: datetime | str, window_size: int = 5) -> List[Dict]:
         """
         Get daily price movements (rise/fall) for a window of days up to target date.
         
@@ -148,5 +150,4 @@ if __name__ == "__main__":
     movements = loader.get_price_movements("AAPL", datetime.strptime("2019-01-14", "%Y-%m-%d"), window_size=5)
     print("\nPrice movements for AAPL:")
     for movement in movements:
-        direction = "up" if movement['rise'] else "down"
-        print(f"{movement['date'].strftime('%Y-%m-%d')}: {direction}")
+        print(f"{movement['date'].strftime('%Y-%m-%d')}: {movement['rise']}")

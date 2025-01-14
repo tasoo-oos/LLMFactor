@@ -1,4 +1,3 @@
-import os
 import time
 import logging
 from logging.handlers import RotatingFileHandler
@@ -174,46 +173,6 @@ class LLMFactorAnalyzer:
             return result
 
 
-class LoggerSetup:
-    @staticmethod
-    def setup(run_dir: Path) -> logging.Logger:
-        """Set up logging configuration."""
-        logger = logging.getLogger('LLMFactorAnalyzer')
-        logger.setLevel(logging.DEBUG)
-
-        # Create formatters
-        file_formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-        console_formatter = logging.Formatter(
-            '%(levelname)s - %(message)s'
-        )
-
-        # File handler (detailed logging)
-        log_file = run_dir / 'analysis.log'
-        if os.path.isfile(log_file):
-            os.remove(log_file)
-
-        file_handler = RotatingFileHandler(
-            run_dir / 'analysis.log',
-            maxBytes=10*1024*1024,  # 10MB
-            backupCount=5
-        )
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(file_formatter)
-
-        # Console handler (important info only)
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.WARNING)
-        console_handler.setFormatter(console_formatter)
-
-        # Add handlers to logger
-        logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
-
-        return logger
-
-
 class StatisticsTracker:
     def __init__(self):
         self.stats = {
@@ -283,19 +242,54 @@ class StatisticsTracker:
             "mcc": mcc
         }
 
+
 class ResultLogger:
-    def __init__(self, base_dir: Path, logger: logging.Logger):
+    def __init__(self, base_dir: Path):
         """Initialize result logger with base directory."""
-        self.logger = logger
         self.run_dir = self._create_run_directory(base_dir)
         self.failed_dir = self.run_dir / "failed"
         self.error_dir = self.failed_dir / "error"
         self.uncertain_dir = self.failed_dir / "uncertain"
 
+        self.logger = self._setup_logger()
+
         # Create directory structure
         for directory in [self.failed_dir, self.error_dir, self.uncertain_dir]:
             directory.mkdir(parents=True, exist_ok=True)
             self.logger.debug(f"Created directory: {directory}")
+
+    def _setup_logger(self) -> logging.Logger:
+        """Set up logging configuration in the run directory."""
+        logger = logging.getLogger('LLMFactorAnalyzer')
+        logger.setLevel(logging.DEBUG)
+
+        # Create formatters
+        file_formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        console_formatter = logging.Formatter(
+            '%(levelname)s - %(message)s'
+        )
+
+        # File handler (detailed logging)
+        file_handler = RotatingFileHandler(
+            self.run_dir / 'analysis.log',
+            maxBytes=10*1024*1024,  # 10MB
+            backupCount=5
+        )
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(file_formatter)
+
+        # Console handler (important info only)
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(console_formatter)
+
+        # Add handlers to logger
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+
+        return logger
 
     def save_settings(self, args: argparse.Namespace) -> None:
         """Save CLI arguments to settings.json."""
@@ -431,6 +425,7 @@ class AnalysisRunner:
         print(f"  Matthews Correlation Coefficient: {metrics['mcc']:.4f}")
 
 def main():
+
     try:
         # Parse command line arguments
         parser = argparse.ArgumentParser(description='LLM Factor Analysis Tool')
@@ -455,15 +450,12 @@ def main():
         args = parser.parse_args()
 
         # Create result directory and set up logging
-        result_dir = Path(args.output)
-        os.makedirs(result_dir, exist_ok=True)
+        result_logger = ResultLogger(Path(args.output))
 
-        logger = LoggerSetup.setup(result_dir)
         logger.info("Starting LLM Factor Analysis")
 
         # Initialize components
         analyzer = LLMFactorAnalyzer(args.endpoint, args.token, args.model, logger)
-        result_logger = ResultLogger(Path(args.output), logger)
 
         # Save settings
         result_logger.save_settings(args)
