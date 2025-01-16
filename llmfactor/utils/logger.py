@@ -16,15 +16,12 @@ class LoggerSingleton:
     def get_logger(cls, log_dir: Path = None) -> logging.Logger:
         if not cls._instance:
             cls._instance = logging.getLogger('LLMFactorAnalyzer')
+            cls._setup_basic_logging()
+            cls._initialized = True
 
-            if not cls._initialized:
-                # Set up basic console logging immediately
-                cls._setup_basic_logging()
-                cls._initialized = True
-
-            # If log_dir is provided, add file handling
-            if log_dir:
-                cls._setup_file_logging(log_dir)
+        # Add this condition - set up file logging if directory is provided
+        if log_dir and not any(isinstance(handler, RotatingFileHandler) for handler in cls._instance.handlers):
+            cls._setup_file_logging(log_dir)
 
         return cls._instance
 
@@ -35,7 +32,7 @@ class LoggerSingleton:
         logger.setLevel(logging.DEBUG)
 
         console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(logging.INFO)
+        console_handler.setLevel(logging.WARNING)
         console_formatter = logging.Formatter('%(levelname)s - %(message)s')
         console_handler.setFormatter(console_formatter)
 
@@ -64,15 +61,16 @@ class ResultLogger:
     def __init__(self, base_dir: Path):
         """Initialize result logger with base directory."""
         self.run_dir = self._create_run_directory(base_dir)
-        self.failed_dir = self.run_dir / "failed"
-        self.error_dir = self.failed_dir / "error"
-        self.uncertain_dir = self.failed_dir / "uncertain"
+        self.results_dir = self.run_dir / "results"
+        self.error_dir = self.results_dir / "error"
+        self.uncertain_dir = self.results_dir / "uncertain"
+        self.success_dir = self.results_dir / "success"
 
         # Use the singleton logger and add file logging
         self.logger = LoggerSingleton.get_logger(self.run_dir)
 
         # Create directory structure
-        for directory in [self.failed_dir, self.error_dir, self.uncertain_dir]:
+        for directory in [self.results_dir, self.error_dir, self.uncertain_dir, self.success_dir]:
             directory.mkdir(parents=True, exist_ok=True)
             self.logger.debug(f"Created directory: {directory}")
 
@@ -100,11 +98,16 @@ class ResultLogger:
         with open(self.run_dir / "stats.json", 'w') as f:
             json.dump(stats, f, indent=2)
 
-        if result['status'] == 'success':
-            return
-
         filename = f"{result['ticker']}_{result['date']}.json"
-        target_dir = self.error_dir if result['status'] == 'error' else self.uncertain_dir
+
+        if result['status'] == 'error':
+            target_dir = self.error_dir
+        elif result['status'] == 'uncertain':
+            target_dir = self.uncertain_dir
+        elif result['status'] == 'success':
+            target_dir = self.success_dir
+        else:
+            raise ValueError(f"Unknown status: {result['status']}")
 
         with open(target_dir / filename, 'w') as f:
             json.dump(result, f, indent=2)

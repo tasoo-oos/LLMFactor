@@ -1,4 +1,5 @@
 import pandas as pd
+import os
 import glob
 from typing import List, Dict, Optional
 from datetime import datetime
@@ -8,15 +9,15 @@ class NewsDataLoader:
     A class to load and process news data for different stock tickers.
     """
     
-    def __init__(self, data_dir: str = "./CMIN-Dataset/CMIN-US/news/raw"):
+    def __init__(self, data_dir: str = "CMIN-US/news/raw"):
         """
         Initialize the NewsDataLoader with the directory containing news data files.
         
         Args:
-            data_dir (str): Path to the directory containing the news CSV files
+            data_dir (str): Path to the directory containing the news CSV files, relative to the current file
         """
-        self.data_dir = data_dir
-        self.news_files = sorted(glob.glob(f"{data_dir}/*.csv"))
+        self.data_dir = os.path.join(os.path.dirname(__file__), data_dir)
+        self.news_files = sorted(glob.glob(f"{self.data_dir}/*.csv"))
         self.tickers = [file.split('/')[-1].split(".")[0] for file in self.news_files]
         self._cached_data: Dict[str, pd.DataFrame] = {}
         
@@ -125,5 +126,5 @@ if __name__ == "__main__":
     print("Available tickers:", loader.get_available_tickers())
     
     # Example: Get news for AAPL on a specific date
-    aapl_news = loader.get_news_by_date("AAPL", datetime.strptime("2018-04-25", "%Y-%m-%d"))
+    aapl_news = loader.get_news_by_date("AAPL", datetime.strptime("2018-01-10", "%Y-%m-%d"))
     print(aapl_news)

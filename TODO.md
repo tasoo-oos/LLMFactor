@@ -1,1 +1,2 @@
-- [ ] Add relations detection to the LLMFactor framework.
+- [ ] Further refactoring of the analyzer.py module
+- [ ] Re-prompting the factor extraction so it only print the factors

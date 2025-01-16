@@ -1,5 +1,6 @@
 import pandas as pd
 import glob
+import os
 from typing import List, Dict, Optional
 from datetime import datetime
 
@@ -8,15 +9,15 @@ class PriceDataLoader:
     A class to load and process price data for different stock tickers.
     """
     
-    def __init__(self, data_dir: str = "./CMIN-Dataset/CMIN-US/price/raw"):
+    def __init__(self, data_dir: str = "CMIN-US/price/raw"):
         """
         Initialize the PriceDataLoader with the directory containing price data files.
         
         Args:
             data_dir (str): Path to the directory containing the price CSV files
         """
-        self.data_dir = data_dir
-        self.price_files = sorted(glob.glob(f"{data_dir}/*.csv"))
+        self.data_dir = os.path.join(os.path.dirname(__file__), data_dir)
+        self.price_files = sorted(glob.glob(f"{self.data_dir}/*.csv"))
         self.tickers = [file.split('/')[-1].split(".")[0] for file in self.price_files]
         self._cached_data: Dict[str, pd.DataFrame] = {}
         

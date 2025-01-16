@@ -65,7 +65,7 @@ class AnalysisRunner:
                 for target_date in dates:
                     pbar.set_description(f"Processing {ticker} {target_date.strftime('%Y-%m-%d')}")
 
-                    result = self.analyzer.analyze_factors(ticker, target_date)
+                    result = self.analyzer.analyze_factors(ticker, target_date, post_process_method=args.post_process_method, factor_k=args.factor_k, price_k=args.price_k)
                     self.stats_tracker.update(result)
                     self.logger.log_result(result, self.stats_tracker.get_statistics())
 

@@ -30,11 +30,14 @@ def main():
                             help='Number of factors to extract (default: 5)')
         parser.add_argument('--price-k', type=int, default=5,
                             help='Number of price movement days to consider (default: 5)')
+        parser.add_argument('--post-process-method', type=str, default='none', choices=['none', 'reverse'],
+                            help='Post-processing method for extracted factors (default: none)')
         args = parser.parse_args()
 
         # Initialize components
         analyzer = LLMFactorAnalyzer(args.endpoint, args.token, args.model, logger)
         result_logger = ResultLogger(Path(args.output))
+        result_logger.save_settings(args)
 
         runner = AnalysisRunner(analyzer, result_logger)
 
