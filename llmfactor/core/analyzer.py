@@ -4,7 +4,7 @@ from openai import OpenAI
 import logging
 import time
 import re
-from llmfactor.data import NewsDataLoader, PriceDataLoader
+from llmfactor.data import DataProviderFactory
 from dataclasses import dataclass
 
 
@@ -51,8 +51,8 @@ class LLMFactorAnalyzer:
             api_key=api_key,
         )
         self.model = model
-        self.price_data = PriceDataLoader()
-        self.news_data = NewsDataLoader()
+        self.price_data = DataProviderFactory.create_price_provider("cmin")
+        self.news_data = DataProviderFactory.create_news_provider("cmin")
 
     def get_available_tickers(self) -> List[str]:
         """Get tickers available in both price and news data."""
@@ -67,6 +67,19 @@ class LLMFactorAnalyzer:
         price_dates = set(self.price_data.get_available_dates(ticker, price_k))
         news_dates = set(self.news_data.get_available_dates(ticker))
         return sorted(price_dates.intersection(news_dates))
+
+    def format_news_data(self, news_data: List[Dict[str, Any]]) -> str:
+        """Format news data into a string."""
+        news_str_format = "### {title}\n{summary}\n\n"
+        news_str = ""
+
+        for news in news_data:
+            news_str += news_str_format.format(
+                title=news['title'],
+                summary=news['summary']
+            )
+
+        return news_str
 
     def format_price_movements(self,
                                price_movements: List[Dict[str, Any]],
@@ -116,7 +129,8 @@ class LLMFactorAnalyzer:
         """Fetch and prepare all necessary data for analysis."""
         start_time = time.time()
 
-        news_str = self.news_data.get_news_by_date(ticker, target_date)
+        news_data = self.news_data.get_news_by_date(ticker, target_date, attribute=['title', 'summary'])
+        news_str = self.format_news_data(news_data)
         price_movements = self.price_data.get_price_movements(ticker, target_date, price_k)
         price_str, price_str_last = self.format_price_movements(price_movements, ticker, target_date)
 
@@ -214,7 +228,7 @@ class LLMFactorAnalyzer:
 
         messages.extend([
             {"role": "system", "content": price_str},
-            {"role": "assistant", "content": price_str_last},
+            {"role": "system", "content": price_str_last},
         ])
 
         response = self.client.chat.completions.create(

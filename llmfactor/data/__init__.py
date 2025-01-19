@@ -1,4 +1,3 @@
-from .news_data_cmin import NewsDataLoader
-from .price_data_cmin import PriceDataLoader
+from .base import DataProviderFactory
 
-__all__ = ['NewsDataLoader', 'PriceDataLoader']
+__all__ = ['DataProviderFactory']
