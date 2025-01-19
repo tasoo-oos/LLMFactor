@@ -1,9 +1,35 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 from openai import OpenAI
 import logging
 import time
-from dataset_manager import NewsDataLoader, PriceDataLoader
+import re
+from llmfactor.data import NewsDataLoader, PriceDataLoader
+from dataclasses import dataclass
+
+
+@dataclass
+class AnalysisResult:
+    ticker: str
+    date: str
+    factors: Optional[str] = None
+    analysis: Optional[str] = None
+    prediction: Optional[str] = None
+    actual: Optional[str] = None
+    status: str = ""
+    error: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'ticker': self.ticker,
+            'date': self.date,
+            'factors': self.factors,
+            'analysis': self.analysis,
+            'prediction': self.prediction,
+            'actual': self.actual,
+            'status': self.status,
+            'error': self.error
+        }
 
 
 class LLMFactorAnalyzer:
@@ -66,6 +92,83 @@ class LLMFactorAnalyzer:
 
         return price_str, price_str_last
 
+    def extract_factors(self, text):
+        """Extract factors from text using regex."""
+        # Pattern to match numbered items with their descriptions
+        # Looks for: number, dot, colon, and remaining text
+        pattern = r'\d+\.[^:]+:\s+([^\n]+)'
+
+        # Find all matches in the text
+        matches = re.finditer(pattern, text)
+
+        # Create a dictionary to store factors with their descriptions
+        result_str = ""
+
+        for match in matches:
+            result_str += match.group(0) + "\n"
+
+        return result_str[:-1]
+
+    def _fetch_analysis_data(self,
+                             ticker: str,
+                             target_date: datetime,
+                             price_k: int) -> Dict[str, Any]:
+        """Fetch and prepare all necessary data for analysis."""
+        start_time = time.time()
+
+        news_str = self.news_data.get_news_by_date(ticker, target_date)
+        price_movements = self.price_data.get_price_movements(ticker, target_date, price_k)
+        price_str, price_str_last = self.format_price_movements(price_movements, ticker, target_date)
+
+        self.logger.debug(f"Data fetching took {time.time() - start_time:.2f} seconds")
+
+        return {
+            'news': news_str,
+            'price_movements': price_movements,
+            'price_str': price_str,
+            'price_str_last': price_str_last
+        }
+
+    def _process_factors(self,
+                         ticker: str,
+                         news_str: str,
+                         factor_k: int,
+                         post_process_method: str) -> str:
+        """Extract and post-process factors from news data."""
+        start_time = time.time()
+
+        factor_str = self._extract_factors(ticker, news_str, factor_k)
+
+        if post_process_method == "opposite":
+            factor_str = self.opposite_meaning_factors(factor_str)
+        elif post_process_method != "none":
+            raise ValueError(f"Invalid post-processing method: {post_process_method}")
+
+        self.logger.debug(f"Factor processing took {time.time() - start_time:.2f} seconds")
+        return factor_str
+
+    def _extract_factors(self,
+                         ticker: str,
+                         news_str: str,
+                         factor_k: int) -> str:
+        """Extract factors using LLM."""
+        response = self.client.chat.completions.create(
+            model=self.model,
+            temperature=0,
+            max_tokens=factor_k * 200,
+            messages=[
+                {"role": "system",
+                 "content": f"Please extract the top {factor_k} factors that may affect the stock price of {ticker} from the following news."},
+                {"role": "user", "content": "# news list\n\n" + news_str},
+                {"role": "user",
+                 "content": f"Now, tell me. What are the {factor_k} most influential market drivers for {ticker} based on recent news? Write your answer with following format:\n" + "".join(
+                     [f"\n{i}." for i in range(1, factor_k + 1)])},
+            ]
+        )
+
+        result = response.choices[0].message.content
+        return self.extract_factors(result)
+
     def opposite_meaning_factors(self, factors: str) -> str:
         """
         Post-process factors os it has opposite meaning.
@@ -82,139 +185,114 @@ class LLMFactorAnalyzer:
             temperature=0,
             messages=[
                 {"role": "system",
-                 "content": f"You are a playful assistant, saying opposite meaning of the given statement by user. Your goal is to blend the opposite meaning of the given statement, so the user won't notice. Don't add markdown statements to your changes."},
+                 "content": f"You are a playful assistant, saying opposite situation of the given statement by user. Your goal is to write the opposite situation of each given statement."},
                 {"role": "user", "content": factors}
             ]
         )
 
-        return factor_inverse.choices[0].message.content
+        result = factor_inverse.choices[0].message.content
+        return self.extract_factors(result)
 
+    def _analyze_price_movement(self,
+                                ticker: str,
+                                news_factors: Optional[str],
+                                price_str: str,
+                                price_str_last: str) -> str:
+        """Analyze price movement using LLM."""
+        start_time = time.time()
+
+        messages = [
+            {"role": "system",
+             "content": f"Based on the following information, please judge the direction of the {ticker}'s stock price from rise/fall, fill in the blank and give reasons."},
+        ]
+
+        if news_factors:
+            messages.append(
+                {"role": "system",
+                 "content": f"These are the main factors that may affect this stock’s price recently:\n\n{news_factors}."},
+            )
+
+        messages.extend([
+            {"role": "system", "content": price_str},
+            {"role": "assistant", "content": price_str_last},
+        ])
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            temperature=0,
+            max_tokens=100,
+            stop=["\n"],
+            messages=messages
+        )
+
+        self.logger.debug(f"Price movement analysis took {time.time() - start_time:.2f} seconds")
+        return response.choices[0].message.content
+
+    def _update_result_with_prediction(self,
+                                       result: AnalysisResult,
+                                       analysis: str,
+                                       price_movements: List[Dict[str, Any]]) -> None:
+        """Update result object with prediction analysis."""
+        result.analysis = analysis
+
+        filled_blanks = analysis.split('\n')[0]
+        positive_sentiments = ["rise", "rose"]
+        negative_sentiments = ["fall", "fell"]
+
+        pred_rise = any(sentiment in filled_blanks for sentiment in positive_sentiments)
+        pred_fall = any(sentiment in filled_blanks for sentiment in negative_sentiments)
+        actual_rise = price_movements[-1]['rise']
+
+        if pred_rise == pred_fall:
+            result.status = "uncertain"
+            return
+
+        result.prediction = "rise" if pred_rise else "fall"
+        result.actual = "rise" if actual_rise else "fall"
 
     def analyze_factors(self,
                         ticker: str,
                         target_date: datetime,
-                        extract_factors: bool = False,
+                        extract_factors: bool = True,
                         post_process_method: str = "none",
                         factor_k: int = 5,
                         price_k: int = 5) -> Dict[str, Any]:
         """
-        Analyze factors affecting stock price movement.
-
-        Args:
-            ticker: Stock ticker symbol
-            target_date: Target date for analysis
-            extract_factors: Whether to extract factors from news data
-            post_process_method: Method to use for post-process factors after factor extraction, if extract_factors is False, this parameter is ignored
-                none: No post-processing
-                opposite: Make factors have opposite meaning
-            factor_k: Number of factors to extract, if extract_factors is False, this parameter is ignored
-            price_k: Number of price movement days to consider
-
-        Returns:
-            Dictionary containing analysis results and metadata
+        Main entry point for factor analysis. Orchestrates the analysis workflow.
         """
-
-        if post_process_method not in ["none", "opposite"]:
-            raise ValueError(f"Invalid post-processing method: {post_process_method}")
-
         self.logger.info(f"Analyzing data for {ticker} on {target_date.strftime('%Y-%m-%d')}")
 
-        result = {
-            "ticker": ticker,
-            "date": target_date.strftime('%Y-%m-%d'),
-            "factors": None,
-            "analysis": None,
-            "prediction": None,
-            "actual": None,
-            "status": "",
-            "error": ""
-        }
+        result = AnalysisResult(
+            ticker=ticker,
+            date=target_date.strftime('%Y-%m-%d')
+        )
 
         try:
-            # Get data
-            start_time = time.time()
-            news_str = self.news_data.get_news_by_date(ticker, target_date)
-            price_movements = self.price_data.get_price_movements(ticker, target_date, price_k)
-            price_str, price_str_last = self.format_price_movements(price_movements, ticker, target_date)
-            self.logger.debug(f"Data fetching took {time.time() - start_time:.2f} seconds")
+            data = self._fetch_analysis_data(ticker, target_date, price_k)
 
             if extract_factors:
-                # Extract factors
-                start_time = time.time()
-                factor_extraction = self.client.chat.completions.create(
-                    model=self.model,
-                    temperature=0,
-                    max_tokens=factor_k * 200,
-                    messages=[
-                        {"role": "system", "content": f"Please extract the top {factor_k} factors that may affect the stock price of {ticker} from the following news."},
-                        {"role": "user", "content": news_str},
-                        {"role": "assistant", "content": f"The following are the main {factor_k} factors that may affect {ticker}’s stock price recently:"}
-                    ]
+                result.factors = self._process_factors(
+                    ticker,
+                    data['news'],
+                    factor_k,
+                    post_process_method
                 )
-                factor_str = factor_extraction.choices[0].message.content
 
-                # Post-process factors
-                if post_process_method == "opposite":
-                    factor_str = self.opposite_meaning_factors(factor_str)
-                elif post_process_method == "none":
-                    pass
-                else:
-                    raise ValueError(f"Invalid post-processing method: {post_process_method}")
-
-                result['factors'] = factor_str
-
-                self.logger.debug(f"Factor extraction took {time.time() - start_time:.2f} seconds")
-                self.logger.debug(f"{len(news_str)} characters of news data, {len(factor_str)} characters of factor data")
-
-            answer_messages = [
-                {"role": "system",
-                 "content": "Based on the following information, please judge the direction of the stock price from rise/fall, fill in the blank and give reasons."}
-            ]
-            if extract_factors:
-                answer_messages.append(
-                    {"role": "user",
-                     "content": f"These are the main factors that may affect this stock’s price recently: {factor_str}."},
-                )
-            answer_messages.extend([
-                {"role": "user", "content": price_str},
-                {"role": "assistant", "content": price_str_last}
-            ])
-
-            # Analyze price movement
-            start_time = time.time()
-            answer_extraction = self.client.chat.completions.create(
-                model=self.model,
-                temperature=0,
-                max_tokens=100,
-                stop=["\n"],
-                messages=answer_messages
+            analysis_result = self._analyze_price_movement(
+                ticker=ticker,
+                news_factors=result.factors,
+                price_str=data['price_str'],
+                price_str_last=data['price_str_last']
             )
 
-            answer = answer_extraction.choices[0].message.content
-            result['analysis'] = answer
-            self.logger.debug(f"Price movement analysis took {time.time() - start_time:.2f} seconds")
+            self._update_result_with_prediction(result, analysis_result, data['price_movements'])
 
-            # Parse prediction
-            filled_blanks = answer.split('\n')[0]
-            positive_sentiments = ["rise", "rose"]
-            negative_sentiments = ["fall", "fell"]
-
-            pred_rise = any(sentiment in filled_blanks for sentiment in positive_sentiments)
-            pred_fall = any(sentiment in filled_blanks for sentiment in negative_sentiments)
-            actual_rise = price_movements[-1]['rise']
-
-            if pred_rise == pred_fall:
-                result['status'] = "uncertain"
-                return result
-
-            result['prediction'] = "rise" if pred_rise else "fall"
-            result['actual'] = "rise" if actual_rise else "fall"
-
-            result['status'] = "success"
+            result.status = "success"
             self.logger.info(f"Successfully analyzed {ticker} for {target_date.strftime('%Y-%m-%d')}")
-            return result
 
         except Exception as e:
-            result['status'] = "error"
-            result['error'] = str(e)
-            return result
+            result.status = "error"
+            result.error = str(e)
+            self.logger.error(f"Error analyzing {ticker}: {str(e)}")
+
+        return result.to_dict()

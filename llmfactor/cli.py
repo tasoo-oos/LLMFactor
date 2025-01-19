@@ -12,10 +12,10 @@ def main():
     try:
         # Parse command line arguments
         parser = argparse.ArgumentParser(description='LLM Factor Analysis Tool')
-        parser.add_argument('--endpoint', type=str, default='http://localhost:11434/v1',
-                            help='API endpoint URL (default: http://localhost:11434/v1)')
-        parser.add_argument('--model', type=str, default='llama3.2-vision:11b',
-                            help='Model identifier to use (default: llama3.2-vision:11b)')
+        parser.add_argument('--endpoint', type=str, default='http://127.0.0.1:5678/v1',
+                            help='API endpoint URL (default: http://127.0.0.1:5678/v1)')
+        parser.add_argument('--model', type=str, default='./models/llama-3.1-8B-instruct-Q8_0.gguf',
+                            help='Model identifier to use (default: ./models/llama-3.1-8B-instruct-Q8_0.gguf)')
         parser.add_argument('--token', type=str, default='token-abc123',
                             help='API token (default: token-abc123)')
         parser.add_argument('--output', type=str, default='./results',
@@ -30,7 +30,7 @@ def main():
                             help='Number of factors to extract (default: 5)')
         parser.add_argument('--price-k', type=int, default=5,
                             help='Number of price movement days to consider (default: 5)')
-        parser.add_argument('--post-process-method', type=str, default='none', choices=['none', 'reverse'],
+        parser.add_argument('--post-process-method', type=str, default='none', choices=['none', 'opposite'],
                             help='Post-processing method for extracted factors (default: none)')
         args = parser.parse_args()
 

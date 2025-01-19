@@ -18,3 +18,4 @@ venv.bak/
 # specific to llmFactor
 results/
 .idea/
+setup_llm.sh
