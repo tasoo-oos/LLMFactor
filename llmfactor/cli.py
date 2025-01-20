@@ -3,6 +3,7 @@ from pathlib import Path
 from .core.analyzer import LLMFactorAnalyzer
 from .core.runner import AnalysisRunner
 from .utils.logger import LoggerSingleton, ResultLogger
+from llmfactor.utils.llm_provider import LLMProviderFactory
 
 
 def main():
@@ -35,9 +36,16 @@ def main():
         args = parser.parse_args()
 
         # Initialize components
-        analyzer = LLMFactorAnalyzer(args.endpoint, args.token, args.model, logger)
+        llm_provider = LLMProviderFactory.create_llm_provider(
+            provider_type='openai',
+            base_url=args.endpoint,
+            api_key=args.token,
+            model=args.model,
+        )
+        analyzer = LLMFactorAnalyzer(llm_provider, logger)
         result_logger = ResultLogger(Path(args.output))
         result_logger.save_settings(args)
+
 
         runner = AnalysisRunner(analyzer, result_logger)
 

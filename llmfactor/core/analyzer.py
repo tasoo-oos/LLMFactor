@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from openai import OpenAI
+from llmfactor.utils.llm_provider import LLMProvider
 import logging
 import time
 import re
@@ -33,24 +33,16 @@ class AnalysisResult:
 
 
 class LLMFactorAnalyzer:
-    def __init__(self, base_url: str, api_key: str, model: str, logger: logging.Logger):
+    def __init__(self, llm_provider: LLMProvider, logger: logging.Logger):
         """
         Initialize the LLM Factor Analyzer.
 
         Args:
-            base_url: Base URL for the OpenAI API
-            api_key: API key for authentication
-            model: Model identifier to use for analysis
             logger: Logger instance for tracking operations
         """
         self.logger = logger
-        self.logger.info(f"Initializing LLMFactorAnalyzer with model: {model}")
+        self.provider = llm_provider
 
-        self.client = OpenAI(
-            base_url=base_url,
-            api_key=api_key,
-        )
-        self.model = model
         self.price_data = DataProviderFactory.create_price_provider("cmin")
         self.news_data = DataProviderFactory.create_news_provider("cmin")
 
@@ -84,10 +76,10 @@ class LLMFactorAnalyzer:
     def format_price_movements(self,
                                price_movements: List[Dict[str, Any]],
                                stock_target: str,
-                               target_date: datetime) -> tuple[str, str]:
+                               target_date: datetime) -> str:
         """Format price movement data into a string."""
         price_str_format = "On {date}, the stock price of {stock_target} {risefall}.\n"
-        price_str_format_last = "On {date}, the stock price of {stock_target}"
+        price_str_format_last = "On {date}, the stock price of {stock_target} ____."
 
         price_str = ""
 
@@ -98,14 +90,14 @@ class LLMFactorAnalyzer:
                 risefall="rose" if move['rise'] else "fell"
             )
 
-        price_str_last = price_str_format_last.format(
+        price_str += price_str_format_last.format(
             date=target_date.strftime('%Y-%m-%d'),
             stock_target=stock_target
         )
 
-        return price_str, price_str_last
+        return price_str
 
-    def extract_factors(self, text):
+    def extract_factors(self, text: str) -> str:
         """Extract factors from text using regex."""
         # Pattern to match numbered items with their descriptions
         # Looks for: number, dot, colon, and remaining text
@@ -132,31 +124,31 @@ class LLMFactorAnalyzer:
         news_data = self.news_data.get_news_by_date(ticker, target_date, attribute=['title', 'summary'])
         news_str = self.format_news_data(news_data)
         price_movements = self.price_data.get_price_movements(ticker, target_date, price_k)
-        price_str, price_str_last = self.format_price_movements(price_movements, ticker, target_date)
+        price_str = self.format_price_movements(price_movements, ticker, target_date)
 
         self.logger.debug(f"Data fetching took {time.time() - start_time:.2f} seconds")
 
         return {
             'news': news_str,
             'price_movements': price_movements,
-            'price_str': price_str,
-            'price_str_last': price_str_last
+            'price_str': price_str
         }
 
     def _process_factors(self,
                          ticker: str,
                          news_str: str,
                          factor_k: int,
-                         post_process_method: str) -> str:
+                         processing_method: str) -> str:
         """Extract and post-process factors from news data."""
         start_time = time.time()
 
-        factor_str = self._extract_factors(ticker, news_str, factor_k)
-
-        if post_process_method == "opposite":
+        if processing_method == "opposite-factors":
+            factor_str = self._extract_factors(ticker, news_str, factor_k)
             factor_str = self.opposite_meaning_factors(factor_str)
-        elif post_process_method != "none":
-            raise ValueError(f"Invalid post-processing method: {post_process_method}")
+        elif processing_method == "none":
+            factor_str = self._extract_factors(ticker, news_str, factor_k)
+        else:
+            raise ValueError(f"Invalid post-processing method: {processing_method}")
 
         self.logger.debug(f"Factor processing took {time.time() - start_time:.2f} seconds")
         return factor_str
@@ -166,8 +158,7 @@ class LLMFactorAnalyzer:
                          news_str: str,
                          factor_k: int) -> str:
         """Extract factors using LLM."""
-        response = self.client.chat.completions.create(
-            model=self.model,
+        response = self.provider.generate_completion(
             temperature=0,
             max_tokens=factor_k * 200,
             messages=[
@@ -180,8 +171,7 @@ class LLMFactorAnalyzer:
             ]
         )
 
-        result = response.choices[0].message.content
-        return self.extract_factors(result)
+        return self.extract_factors(response.content)
 
     def opposite_meaning_factors(self, factors: str) -> str:
         """
@@ -194,8 +184,7 @@ class LLMFactorAnalyzer:
             Factors with opposite meaning
         """
 
-        factor_inverse = self.client.chat.completions.create(
-            model=self.model,
+        response = self.provider.generate_completion(
             temperature=0,
             messages=[
                 {"role": "system",
@@ -204,43 +193,30 @@ class LLMFactorAnalyzer:
             ]
         )
 
-        result = factor_inverse.choices[0].message.content
-        return self.extract_factors(result)
+        return self.extract_factors(response.content)
 
     def _analyze_price_movement(self,
                                 ticker: str,
                                 news_factors: Optional[str],
-                                price_str: str,
-                                price_str_last: str) -> str:
+                                price_str: str) -> str:
         """Analyze price movement using LLM."""
         start_time = time.time()
 
-        messages = [
-            {"role": "system",
-             "content": f"Based on the following information, please judge the direction of the {ticker}'s stock price from rise/fall, fill in the blank and give reasons."},
-        ]
 
-        if news_factors:
-            messages.append(
-                {"role": "system",
-                 "content": f"These are the main factors that may affect this stock’s price recently:\n\n{news_factors}."},
-            )
-
-        messages.extend([
-            {"role": "system", "content": price_str},
-            {"role": "system", "content": price_str_last},
-        ])
-
-        response = self.client.chat.completions.create(
-            model=self.model,
+        response = self.provider.generate_completion(
             temperature=0,
             max_tokens=100,
             stop=["\n"],
-            messages=messages
+            messages=[
+            {"role": "system",
+             "content": f"Based on the following information, please judge the direction of the {ticker}'s stock price from rise/fall, fill in the blank and give reasons."},
+            {"role": "system",
+             "content": f"These are the main factors that may affect this stock’s price recently:\n\n{news_factors}."},
+            {"role": "system", "content": price_str}]
         )
 
         self.logger.debug(f"Price movement analysis took {time.time() - start_time:.2f} seconds")
-        return response.choices[0].message.content
+        return response.content
 
     def _update_result_with_prediction(self,
                                        result: AnalysisResult,
@@ -267,8 +243,7 @@ class LLMFactorAnalyzer:
     def analyze_factors(self,
                         ticker: str,
                         target_date: datetime,
-                        extract_factors: bool = True,
-                        post_process_method: str = "none",
+                        processing_method: str = "none",
                         factor_k: int = 5,
                         price_k: int = 5) -> Dict[str, Any]:
         """
@@ -284,19 +259,17 @@ class LLMFactorAnalyzer:
         try:
             data = self._fetch_analysis_data(ticker, target_date, price_k)
 
-            if extract_factors:
-                result.factors = self._process_factors(
-                    ticker,
-                    data['news'],
-                    factor_k,
-                    post_process_method
-                )
+            result.factors = self._process_factors(
+                ticker,
+                data['news'],
+                factor_k,
+                processing_method
+            )
 
             analysis_result = self._analyze_price_movement(
                 ticker=ticker,
                 news_factors=result.factors,
-                price_str=data['price_str'],
-                price_str_last=data['price_str_last']
+                price_str=data['price_str']
             )
 
             self._update_result_with_prediction(result, analysis_result, data['price_movements'])
