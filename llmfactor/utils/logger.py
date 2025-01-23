@@ -15,11 +15,11 @@ class LoggerSingleton:
     @classmethod
     def get_logger(cls, log_dir: Path = None) -> logging.Logger:
         if not cls._instance:
-            cls._instance = logging.getLogger('LLMFactorAnalyzer')
+            cls._instance = logging.getLogger('LLMFactor')
             cls._setup_basic_logging()
             cls._initialized = True
 
-        # Add this condition - set up file logging if directory is provided
+        # Set up file logging if directory is provided
         if log_dir and not any(isinstance(handler, RotatingFileHandler) for handler in cls._instance.handlers):
             cls._setup_file_logging(log_dir)
 
@@ -58,9 +58,10 @@ class LoggerSingleton:
 
 
 class ResultLogger:
-    def __init__(self, base_dir: Path):
+    def __init__(self, base_dir: Path, run_name: str):
         """Initialize result logger with base directory."""
-        self.run_dir = self._create_run_directory(base_dir)
+        self.run_dir = self._create_run_directory(base_dir, run_name)
+
         self.results_dir = self.run_dir / "results"
         self.error_dir = self.results_dir / "error"
         self.uncertain_dir = self.results_dir / "uncertain"
@@ -86,10 +87,11 @@ class ResultLogger:
             json.dump(settings, f, indent=2)
         self.logger.info(f"Saved settings to {settings_path}")
 
-    def _create_run_directory(self, base_dir: Path) -> Path:
+    def _create_run_directory(self, base_dir: Path, run_name: str) -> Path:
         """Create timestamped run directory."""
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        run_dir = base_dir / timestamp
+        folder_name = run_name + "_" + timestamp
+        run_dir = base_dir / folder_name
         run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir
 

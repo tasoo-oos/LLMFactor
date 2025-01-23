@@ -1,3 +1,3 @@
-from .base import DataProviderFactory
+from .base import DataProviderFactory, NewsProvider, PriceProvider
 
-__all__ = ['DataProviderFactory']
+__all__ = ['DataProviderFactory', 'NewsProvider', 'PriceProvider']
