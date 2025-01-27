@@ -58,8 +58,11 @@ class LoggerSingleton:
 
 
 class ResultLogger:
-    def __init__(self, base_dir: Path, run_name: str):
+    def __init__(self, base_dir: str | Path, run_name: str):
         """Initialize result logger with base directory."""
+        if isinstance(base_dir, str):
+            base_dir = Path(base_dir)
+
         self.run_dir = self._create_run_directory(base_dir, run_name)
 
         self.results_dir = self.run_dir / "results"
@@ -75,22 +78,24 @@ class ResultLogger:
             directory.mkdir(parents=True, exist_ok=True)
             self.logger.debug(f"Created directory: {directory}")
 
-    def save_settings(self, args: argparse.Namespace) -> None:
+    def save_settings(self, config: Dict) -> None:
         """Save CLI arguments to settings.json."""
-        settings = vars(args).copy()
         # Mask sensitive information
-        if 'token' in settings:
-            settings['token'] = '***masked***'
+        if 'api_key' in config:
+            config['api_key'] = '***masked***'
 
-        settings_path = self.run_dir / "settings.json"
+        settings_path = self.run_dir / "config.json"
         with open(settings_path, 'w') as f:
-            json.dump(settings, f, indent=2)
-        self.logger.info(f"Saved settings to {settings_path}")
+            json.dump(config, f, indent=2)
+        self.logger.info(f"Saved config file to {settings_path}")
 
     def _create_run_directory(self, base_dir: Path, run_name: str) -> Path:
         """Create timestamped run directory."""
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        folder_name = run_name + "_" + timestamp
+        if run_name:
+            folder_name = run_name + "_" + timestamp
+        else:
+            folder_name = timestamp
         run_dir = base_dir / folder_name
         run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir

@@ -1,0 +1,66 @@
+{
+  "global": {
+    "llm_client": {
+      "provider_type": "openai",
+      "base_url": "http://127.0.0.1:5678/v1",
+      "model": "llama-3.1-8B-instruct-Q8_0",
+      "api_key": "token-abc123"
+    },
+    "result_logger": {
+      "base_dir": "./results",
+      "run_name": "test_run"
+    },
+    "data_provider": {
+      "news": "cmin",
+      "price": "cmin"
+    },
+    "run_settings": {
+      "tickers": [],
+      "start_date": "",
+      "end_date": "",
+      "max_entries": "10000"
+    },
+    "else": {
+      "price_k": 5,
+      "factor_k": 5
+    }
+  },
+  "stages": [
+    {
+      "type": "data_fetch",
+      "version": "v1",
+      "config": {
+      }
+    },
+    {
+      "type": "news_text_format",
+      "version": "v1",
+      "config": {
+      }
+    },
+    {
+      "type": "price_text_format",
+      "version": "v1",
+      "config": {
+      }
+    },
+    {
+      "type": "factor_extract",
+      "version": "v1",
+      "config": {
+      }
+    },
+    {
+      "type": "price_analysis",
+      "version": "v1",
+      "config": {
+      }
+    },
+    {
+      "type": "resolve_prediction",
+      "version": "v1",
+      "config": {
+      }
+    }
+  ]
+}

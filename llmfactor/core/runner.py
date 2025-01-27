@@ -1,11 +1,11 @@
 from typing import Dict
 from tqdm import tqdm
-import argparse
-from ..utils.statistics import StatisticsTracker
-from ..utils.logger import ResultLogger
-from .pipeline import LLMFactorPipeline
+from typing import List
+from ..util.statistics import StatisticsTracker
+from ..util.logger import ResultLogger
+from llmfactor.core.component.pipeline import LLMFactorPipeline
 from .scheduler import LLMFactorScheduler
-from llmfactor.utils.logger import LoggerSingleton
+from llmfactor.util.logger import LoggerSingleton
 
 
 class AnalysisRunner:
@@ -21,15 +21,20 @@ class AnalysisRunner:
         self.logger = LoggerSingleton.get_logger()
         self.stats_tracker = StatisticsTracker()
 
-    def run_analysis(self, args: argparse.Namespace) -> bool:
+    def run_analysis(self,
+                     tickers: List[str],
+                     start_date: str,
+                     end_date: str,
+                     price_k: int,
+                     max_entries: int) -> bool:
         """Run the complete analysis process."""
-        entries = self.scheduler.setup(args.tickers, args.start_date, args.end_date, args.price_k, args.max_entries)
+        entries = self.scheduler.setup(tickers, start_date, end_date, price_k, max_entries)
 
         with tqdm(total=len(entries), desc="Analyzing") as pbar:
-            for ticker, target_date in entries:
-                pbar.set_description(f"Processing {ticker} {target_date.strftime('%Y-%m-%d')}")
+            for tickers, start_date in entries:
+                pbar.set_description(f"Processing {tickers} {start_date.strftime('%Y-%m-%d')}")
 
-                result = self.analyzer.analyze(ticker, target_date)
+                result = self.analyzer.analyze(tickers, start_date)
                 self.stats_tracker.update(result)
                 self.result_logger.log_result(result, self.stats_tracker.get_statistics())
 

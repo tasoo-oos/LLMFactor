@@ -1,2 +1,4 @@
-- [ ] Further refactoring of the analyzer.py module
-- [ ] Re-prompting the factor extraction so it only print the factors
+- [x] Further refactoring of the analyzer.py
+- [x] Re-prompting the factor extraction so it only print the factors
+- [ ] Further modularization of the pipeline module
+- [ ] Add file-based config and versioning

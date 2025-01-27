@@ -2,7 +2,7 @@ import random
 from typing import List, Tuple
 from datetime import datetime
 from llmfactor.data import NewsProvider, PriceProvider
-from llmfactor.utils.logger import LoggerSingleton
+from llmfactor.util.logger import LoggerSingleton
 
 class LLMFactorScheduler:
     """
@@ -61,7 +61,7 @@ class LLMFactorScheduler:
               start_date: str | datetime,
               end_date: str | datetime,
               price_k: int,
-              max_entries: int,
+              max_entries: str | int,
               ) -> List[Tuple[str, datetime]]:
         """
         Search, filter and sample (ticker, date) pair.
@@ -71,13 +71,23 @@ class LLMFactorScheduler:
             start_date (str | datetime): Start date for analysis.
             end_date (str | datetime): End date for analysis.
             price_k (int): Needed prior days for price data.
-            max_entries (int): Maximum number of entries to sample.
+            max_entries (str | int): Maximum number of entries to sample.
         """
 
-        if isinstance(start_date, str):
+        if start_date == "":
+            start_date = None
+        elif isinstance(start_date, str):
             start_date = datetime.strptime(start_date, "%Y-%m-%d")
-        if isinstance(end_date, str):
+
+        if end_date == "":
+            end_date = None
+        elif isinstance(end_date, str):
             end_date = datetime.strptime(end_date, "%Y-%m-%d")
+
+        if max_entries == "":
+            max_entries = 0  # No limit
+        elif isinstance(max_entries, str):
+            max_entries = int(max_entries)
 
         available_tickers = self.get_available_tickers()
 
@@ -95,7 +105,7 @@ class LLMFactorScheduler:
         self.logger.info(f"Found {len(result)} entries for analysis, sampling {max_entries} entries.")
 
         # Set a seed for reproducibility
-        random.seed(42)  # Using a constant seed for deterministic results
+        random.seed(42)
 
         # Sample from the result list
         if 0 < max_entries < len(result):

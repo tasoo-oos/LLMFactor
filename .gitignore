@@ -19,3 +19,4 @@ venv.bak/
 results/
 .idea/
 setup_llm.sh
+*.json
