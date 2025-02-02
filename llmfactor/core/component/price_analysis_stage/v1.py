@@ -12,15 +12,21 @@ class PriceAnalysisStageV1(PipelineStage):
         self.client = llm_client
 
     def process(self, context: PipelineContext) -> PipelineContext:
+        factors = ""
+        if type(context.extracted_factors) == list:
+            factors = context.extracted_factors[-1]
+        else:
+            factors = context.extracted_factors
+
         messages = [
             {"role": "system",
              "content": f"Based on the following information, please judge the direction of the {context.ticker}'s stock price from rise/fall, fill in the blank and give reasons."},
         ]
 
-        if context.extracted_factors:
+        if factors:
             messages.append(
                 {"role": "system",
-                 "content": f"These are the main factors that may affect this stock's price recently:\n\n{context.extracted_factors}."},
+                 "content": f"These are the main factors that may affect this stock's price recently:\n\n{factors}."},
             )
 
         messages.extend([

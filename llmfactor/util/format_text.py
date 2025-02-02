@@ -1,4 +1,5 @@
 import re
+from typing import List, Dict, Any
 
 def extract_factors(text: str) -> str:
     pattern = r'\d+\.[^:]+:\s+([^\n]+)'

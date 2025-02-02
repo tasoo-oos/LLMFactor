@@ -14,10 +14,11 @@ class PipelineContext:
     target_date: datetime
     raw_news: Optional[List[Dict[str, Any]]] = None
     news_text: Optional[str] = None
+    fake_news_text: Optional[str] = None
     price_movements: Optional[List[Dict[str, Any]]] = None
     price_history_text: Optional[str] = None
     price_target_text: Optional[str] = None
-    extracted_factors: Optional[str] = None
+    extracted_factors: Optional[str | List[str]] = None
     analysis_result: Optional[str] = None
     prediction: Optional[str] = None
     actual: Optional[str] = None
@@ -154,6 +155,8 @@ class LLMFactorPipeline:
         return {
             'ticker': result.ticker,
             'date': result.target_date.strftime('%Y-%m-%d'),
+            'news': result.news_text,
+            'fake_news': result.fake_news_text,
             'factors': context.extracted_factors,
             'analysis': result.analysis_result,
             'prediction': result.prediction,

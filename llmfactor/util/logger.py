@@ -81,8 +81,10 @@ class ResultLogger:
     def save_settings(self, config: Dict) -> None:
         """Save CLI arguments to settings.json."""
         # Mask sensitive information
-        if 'api_key' in config:
-            config['api_key'] = '***masked***'
+        try:
+            config["global"]["llm_client"]["api_key"] = '***masked***'
+        except KeyError:
+            pass
 
         settings_path = self.run_dir / "config.json"
         with open(settings_path, 'w') as f:

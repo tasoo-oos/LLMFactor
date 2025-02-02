@@ -1,0 +1,2 @@
+class CensoredError(RuntimeError):
+    pass

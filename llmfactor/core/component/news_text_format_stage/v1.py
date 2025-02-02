@@ -6,7 +6,7 @@ from llmfactor.core.component.registry import registry
 class NewsTextFormatStageV1(PipelineStage):
     """Formats raw data into text"""
 
-    def __init__(self, format_template: str = "{title}\n{summary}\n\n"):
+    def __init__(self, format_template: str = "## {title}\n{summary}\n\n"):
         super().__init__()
         self.format_template = format_template
 
@@ -17,7 +17,7 @@ class NewsTextFormatStageV1(PipelineStage):
                 title=news['title'],
                 summary=news['summary']
             )
-        return news_text
+        return news_text.strip()
 
 
     def process(self, context: PipelineContext) -> PipelineContext:

@@ -11,7 +11,7 @@ class NewsProvider(Protocol):
                          ticker: str,
                          target_date: str | datetime,
                          attribute: Optional[list[str]] = None,
-                         ) -> List[Dict[str, str]]:
+                         ) -> List[Dict[str, str]] | str:
         """Get formatted news for a specific ticker and date"""
         ...
 
